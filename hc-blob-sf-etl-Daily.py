@@ -53,8 +53,9 @@ def set_dtypes(df):
     df['fund_type'] = df['fund_type'].astype('category',errors='ignore')
     df['marital_status'] = df['marital_status'].astype('category',errors='ignore')
     df['pay_scale_group'] = df['pay_scale_group'].astype('category',errors='ignore')
-    df['zip_code'] = df['zip_code'].astype('int',errors='ignore')
+    df['zip_code'] = df['zip_code'].astype('str',errors='ignore')
     df['work_schedule'] = df['work_schedule'].astype('category',errors='ignore')
+    #df["position_start_date"] = pd.to_datetime(df["position_start_date"], dayfirst=True, errors="coerce")
     try:
         df["date_left"] = pd.to_datetime(df["date_left"], dayfirst=True, errors="coerce") # only applicable for leavers
     except:
@@ -73,7 +74,9 @@ def group_cleaning(df):
     df['personnel_subarea'] = df.apply(lambda row: check_pers_subarea(row), axis=1)
     df['reporting_officer'] = df['reporting_officer'].replace("NO_MANAGER",np.nan)
     
-    df['on_shift'] = np.where(df['work_schedule'] != 'Office Work Schedule', True, False)
+    df['fund_type'] = df['fund_type'].fillna("NA")
+    # df['on_shift'] = np.where(df['work_schedule'] != 'Office Work Schedule', True, False)
+    df['on_shift'] = np.where(df['work_schedule'].notna() & (df['work_schedule'] != 'Office Work Schedule'), True, False)
 
     return df
 
@@ -186,8 +189,8 @@ def calculate_age(df, birth_date_col):
     # remove duplicates if they are the same person with same date left
     df = df.drop_duplicates(subset=['persno', 'personnel_number','date_left'], keep='first')
     
-    df = set_dtypes(df)
     df = group_cleaning(df)
+    df = set_dtypes(df)
     
     df['_datejoined_month'] = df['date_joined'].dt.month.astype('Int64', errors='ignore')
     df['_datejoined_year'] = df['date_joined'].dt.year.astype('str', errors='ignore')
@@ -224,8 +227,10 @@ def readHeadcountCSV():
     
     df = pd.concat(dflist, ignore_index=True)
     
-    df = set_dtypes(df)
     df = group_cleaning(df)
+    df = set_dtypes(df)
+
+    df["position_entry_date"] = pd.to_datetime(df["position_entry_date"], dayfirst=True, errors="coerce")
     
     df['_datejoined_month'] = df['date_joined'].dt.month.astype('Int64', errors='ignore')
     df['_datejoined_year'] = df['date_joined'].dt.year.astype('str', errors='ignore')
@@ -233,6 +238,41 @@ def readHeadcountCSV():
     df['active'] = True
     
     return df
+
+# COMMAND ----------
+
+def readFlexiTempCSV():
+    dflist = []
+    filenames = "*flexi*.csv"
+    for file in glob.glob(f"{root_dir}/{filenames}"):
+        fileCreationDate = time.ctime(os.path.getctime(file))
+        print(f"{file}, {fileCreationDate}")
+
+        try:
+            datafile = pd.read_csv(file, header=1, low_memory=False)
+        except:
+            print(f"Reading {file} failed.")
+            pass
+        datafile = cf.strip_clean_drop(datafile)
+        dflist.append(datafile)
+        # remove duplicates if they are the same person with same department (within the same file only)
+        datafile = datafile.drop_duplicates(subset=['persno', 'personnel_number','orgunit'], keep='first', inplace=True)
+        
+    
+    df = pd.concat(dflist, ignore_index=True)
+    
+    df = group_cleaning(df)
+    df = set_dtypes(df)
+
+    df["position_entry_date"] = pd.to_datetime(df["position_entry_date"], dayfirst=True, errors="coerce")
+    
+    df['_datejoined_month'] = df['date_joined'].dt.month.astype('Int64', errors='ignore')
+    df['_datejoined_year'] = df['date_joined'].dt.year.astype('str', errors='ignore')
+    df['_datejoined_fy'] = df.apply(lambda row: cat_fyear(row,'_datejoined_month','_datejoined_year'), axis=1)
+    df['active'] = True
+    
+    return df
+
 
 # COMMAND ----------
 
@@ -284,22 +324,25 @@ df_onemap = pd.read_sql(
     '''
     ,engine
 )
+df_onemap.info()
 
 # COMMAND ----------
 
 if root_dir != "":
     leavers_df = readLeaversCSV()
     headcount_df = readHeadcountCSV()
-    
     df_etl_sf = pd.concat([headcount_df, leavers_df], ignore_index=True)
     df_etl_sf['personnel_subarea'] = df_etl_sf.apply(lambda row: check_pers_subarea(row),axis=1)
     df_etl_sf['source'] = "SF Direct"
     df_etl_sf['eom'] = pd.to_datetime(df_etl_sf['todays_date']) + pd.offsets.MonthEnd(0)
-    
-    #df_etl_sf = df_etl_sf.merge(df_onemap,on='zip_code')
     df_etl_sf = pd.merge(df_etl_sf, df_onemap, on='zip_code', how='left')
-    #df_etl_sf['zipcode_latlong'] = df_etl_sf.apply(lambda row: loadGeoData(row),axis=1)
-    
+
+    flexitemp_df = readFlexiTempCSV()
+    flexitemp_df['personnel_subarea'] = flexitemp_df.apply(lambda row: check_pers_subarea(row),axis=1)
+    flexitemp_df['source'] = "SF Direct"
+    flexitemp_df['eom'] = pd.to_datetime(flexitemp_df['todays_date']) + pd.offsets.MonthEnd(0)
+    flexitemp_df = pd.merge(flexitemp_df, df_onemap, on='zip_code', how='left')
+
     promotions_df = readPromotionCSV()
     
 else:
@@ -333,6 +376,18 @@ db.insert_with_progress(df_etl_sf,"tbl_sf_sql_daily",engine)
 # COMMAND ----------
 
 db.insert_with_progress(promotions_df,"tbl_sf_sql_daily_promotions",engine)
+
+# COMMAND ----------
+
+db.insert_with_progress(flexitemp_df,"tbl_sf_sql_daily_flexi_temp",engine)
+
+# COMMAND ----------
+
+flexitemp_df.info()
+
+# COMMAND ----------
+
+df_etl_sf.info()
 
 # COMMAND ----------
 

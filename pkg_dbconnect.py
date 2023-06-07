@@ -1,12 +1,14 @@
-# db imports
+# db utils & databricks runtime imports for databricks
 from databricks.sdk.runtime import *
-from pyspark.dbutils import DBUtils
+# from pyspark.dbutils import DBUtils
+
+# other imports
 import os
 from dotenv import load_dotenv
 from sqlalchemy import create_engine
 from sqlalchemy.exc import DBAPIError, InterfaceError
 from tqdm import tqdm
-from databricks.sdk.runtime import *
+
 
 # load confi secrets from .env
 load_dotenv()
@@ -33,7 +35,7 @@ def connect_SQLServer():
         print("SQLAlchemy Engine Error")
     return engine
 
-##connect_SQLServer()
+#connect_SQLServer()
 
 def chunker(seq, size):
     return (seq[pos : pos + size] for pos in range(0, len(seq), size))
@@ -113,3 +115,5 @@ def connect_AzureBlob(container):
 
     print(root_dir)
     return root_dir
+
+#connect_AzureBlob('hc-sf-data')

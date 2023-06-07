@@ -32,7 +32,6 @@ root_dir = db.connect_AzureBlob("hc-cb-info")
 
 # define all helper functions
 #
-
 def set_dtypes(df):
     df["date_joined"] = pd.to_datetime(df["date_joined"], dayfirst=True, errors="coerce")
     df["birth_date"] = pd.to_datetime(df["birth_date"], dayfirst=True, errors="coerce")
@@ -88,22 +87,6 @@ def check_pers_subarea(row):
     
     return
 
-# this is the dictionary to map months to numbers
-month_no_dict = {
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-}
-
 def str_todate(row):
     date_time_str = "18/09/19 01:55:19"
     date_time_obj = datetime.strptime(date_time_str, "%d/%m/%y %H:%M:%S")
@@ -149,7 +132,22 @@ def readComp():
     print(df.info())
     return df
 
+# COMMAND ----------
 
+def readMercerJobMap():
+    filename = f"{root_dir}/HC_SATSGrade_Mercer_Map.xlsx"
+    
+    try:
+        df_jobmap = pd.read_excel(filename, sheet_name=0, header=0)
+    except:
+        print(f"Reading {filename} failed.")
+        pass
+    df_jobmap = cf.strip_clean_drop(df_jobmap)
+
+    return df_jobmap
+
+jobmap_df = readMercerJobMap()
+jobmap_df.info()
 
 # COMMAND ----------
 
@@ -164,6 +162,7 @@ def readMercerData():
     df_mercerdata = cf.strip_clean_drop(df_mercerdata)
 
     return df_mercerdata
+
 mercerdata_df = readMercerData()
 mercerdata_df.info()
 
@@ -177,16 +176,8 @@ md_df = mercerdata_df[d_mask].copy()
 
 # COMMAND ----------
 
-md_df.job_title.value_counts()
+md_df[['position','job_level']] = md_df.job_title.str.split(" - ", n=1, expand=True) # mercer data include this dash to split out the job 
 
-# COMMAND ----------
-
-md_df[['job_title_s1','job_title_s2']] = md_df.job_title.str.split(" - ", n=1, expand=True)
-
-
-# COMMAND ----------
-
-md_df.job_title_s1.sort_values().unique()[200:250]
 
 # COMMAND ----------
 
@@ -200,3 +191,16 @@ else:
 # COMMAND ----------
 
 db.insert_with_progress(comp_df,"tbl_sf_sql_comp",engine)
+
+# COMMAND ----------
+
+db.insert_with_progress(md_df,"tbl_mercerdata",engine)
+
+# COMMAND ----------
+
+db.insert_with_progress(jobmap_df,"tbl_jobmap",engine)
+
+
+# COMMAND ----------
+
+

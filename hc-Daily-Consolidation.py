@@ -280,4 +280,32 @@ db.insert_with_progress(combined_df_promo,"tbl_hc_eelisting_Promo",engine)
 
 # COMMAND ----------
 
+# ETL for Flexi/Temp Headcount info
 
+# new SF direct data piped in on a regular basis, take only latest listing as at end of each month
+df_etl_sf_flexi_temp = pd.read_sql(
+    '''
+    SELECT dataranked.* FROM
+    (select *, RANK() over (partition by datetrunc(month, [todays_date]) order by [todays_date] desc) AS rank FROM tbl_sf_sql_daily_flexi_temp) dataranked
+    WHERE rank=1
+    '''
+    ,engine
+)
+
+# COMMAND ----------
+
+# clean up standardization for merge
+df_etl_sf_flexi_temp['personnel_subarea'] = df_etl_sf_flexi_temp['personnel_subarea'].str.strip().str.upper()
+df_etl_sf_flexi_temp['company_code'] = df_etl_sf_flexi_temp['company_code'].str.strip().str.upper()
+df_etl_sf_flexi_temp['orgunit'] = df_etl_sf_flexi_temp['orgunit'].str.strip().str.upper()
+df_etl_sf_flexi_temp['job'] = df_etl_sf_flexi_temp['job'].str.strip().str.upper()
+# complete vlookup by merging
+df_etl_sf_flexi_temp = pd.merge(df_etl_sf_flexi_temp, ref_grade, on="personnel_subarea",how='left')
+df_etl_sf_flexi_temp = pd.merge(df_etl_sf_flexi_temp, ref_bu, on='orgunit',how='left', suffixes=(None, '_ref'))
+df_etl_sf_flexi_temp = pd.merge(df_etl_sf_flexi_temp, ref_company, on='company_code',how='left')
+df_etl_sf_flexi_temp = pd.merge(df_etl_sf_flexi_temp, ref_jobgroup, on='job',how='left')
+
+
+# COMMAND ----------
+
+db.insert_with_progress(df_etl_sf_flexi_temp,"tbl_hc_flexi_temp",engine)

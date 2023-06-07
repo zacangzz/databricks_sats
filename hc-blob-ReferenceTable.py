@@ -49,15 +49,17 @@ def loadSFOrgStructure():
     filename = f"{root_dir}/sf-orgstructure-Component1.csv"
 
     try:
-        df_sforg = pd.read_csv(filename, header=1)
+        df_sforg = pd.read_csv(filename, header=1,dtype={'Org.Unit':str})
     except:
         print(f"Reading {filename} failed.")
         pass
 
     df_sforg = cf.strip_clean_drop(df_sforg)
-    df_sforg = df_sforg[['orgunit','orgunit_name','parentdepartment_label']].copy()
-    df_sforg.columns = {'orgunit','organizational_unit','parent_department'}
+    df_sforg = df_sforg[['business_unit_label','orgunit','orgunit_name','parentdepartment_label']].copy()
+    df_sforg.columns = {'business_unit','orgunit','organizational_unit','parent_department'}
 
+    df_sforg['parent_department'] = df_sforg['parent_department'].fillna(value=df_sforg['business_unit'])
+    df_sforg = df_sforg.apply(lambda x: x.str.upper() if x.dtypes=="string" else x)
     return df_sforg
 
 sforg_df = loadSFOrgStructure()
@@ -65,7 +67,7 @@ sforg_df = loadSFOrgStructure()
 
 # COMMAND ----------
 
-sforg_df.orgunit.nunique()
+sforg_df.info()
 
 # COMMAND ----------
 
@@ -97,11 +99,22 @@ def loadreferencetables():
     df_jobgroup = cf.strip_clean_drop(df_jobgroup)
     df_attrition = cf.strip_clean_drop(df_attrition)
     
+    # for consistency
+    df_bu = df_bu.apply(lambda x: x.str.upper() if x.dtypes=="string" else x)
+    df_grade = df_grade.apply(lambda x: x.str.upper() if x.dtypes=="string" else x)
+
     # fix strings & integers
     df_company = df_company.rename(columns={"company_id": "company_code"})
 
-    #ensure no blanks
+    # ensure no blanks
     df_bu['parent_department'] = df_bu['parent_department'].fillna(value=df_bu['business_unit'])
+
+    # clean up for vlookup
+    df_grade['personnel_subarea'] = df_grade['personnel_subarea'].str.upper()
+    df_company['company_code'] = df_company['company_code'].str.strip().str.upper()
+    df_bu['orgunit'] = df_bu['orgunit'].str.strip().str.upper()
+    df_attrition['attrition_reason'] = df_attrition['attrition_reason'].str.strip().str.upper()
+    df_jobgroup['job'] = df_jobgroup['job'].str.strip().str.upper()
 
     return df_company, df_grade, df_bu, df_jobgroup, df_attrition
 
@@ -122,13 +135,23 @@ else:
 # COMMAND ----------
 
 sforg_df = sforg_df.set_index('orgunit')
+sforg_df
+
+# COMMAND ----------
+
 ref_bu = ref_bu.set_index('orgunit')
+ref_bu
+
+# COMMAND ----------
+
+#sforg_df = sforg_df.set_index('orgunit')
+#ref_bu = ref_bu.set_index('orgunit')
 ref_bu.update(sforg_df)
 ref_bu = ref_bu.reset_index()
 
 # COMMAND ----------
 
-ref_bu.info()
+ref_bu
 
 # COMMAND ----------
 

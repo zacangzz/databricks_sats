@@ -1,4 +1,8 @@
 # Databricks notebook source
+# helper files to install ODBC driver: MSODBCSQL18
+
+# COMMAND ----------
+
 dbutils.fs.put("dbfs:/databricks/scripts/install-msodbcsql18-ml13.sh","""
 #!/bin/bash
 curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add -

@@ -6,7 +6,7 @@ A set of Python Jupyter Notebooks on Databricks runtime designed for ETL:
 3. Loading into SQL Database (cleaned dataset for further use, loading into Power BI, etc.)
 
 ## Runtime & Dependancies Info
-Azure Databrick 12.2 LTS ML (includes Apache Spark 3.3.2, Scala 2.12)  
+Azure Databricks 13.0 ML (includes Apache Spark 3.4.0, Scala 2.12)  
 Compute: Standard_E4as_v4, 32 GB Memory, 4 Cores  
 
 Additional runtime libraries:
@@ -15,3 +15,14 @@ Additional runtime libraries:
 - pyjanitor==0.24.0 (PyPi)
 - python-dotenv==1.0.0 (PyPi)
 - sqlalchemy==1.4.48 (PyPi)
+
+#### Azure Storage Account
+- Performance: Standard
+- Replication: Locally-redundant storage (LRS)
+- Account kind: StorageV2 (general purpose v2)
+
+#### SQL Server 
+- Service tier: Standard S0
+- DTUs: 10 DTUs
+- Max storage: 250 GB
+- Storage redundancy: Locally-redundant backup storage

@@ -38,7 +38,7 @@ def getToken():
         "password": os.getenv('ONEMAPSG_PW')
     }
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:82.0) Gecko/20100101 Firefox/82.0'
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/42.0.2311.135 Safari/537.36 Edge/12.246'
     }
     response = requests.post(url=api_url, headers=headers, data=params)
     if response.status_code == 200:
