@@ -13,10 +13,9 @@ import warnings
 import holidays
 from dateutil.relativedelta import relativedelta
 
-# commonfunc
-import pkg_commonfunctions as cf
-# connect to db
-import pkg_dbconnect as db
+# import my packages
+from pkg_all import cf
+from pkg_all import db
 
 # COMMAND ----------
 
@@ -26,13 +25,34 @@ engine = db.connect_SQLServer()
 # COMMAND ----------
 
 # connect to Azure Blob
-root_dir = db.connect_AzureBlob("hc-sf-data")
+root_dir = db.connect_AzureBlob("hc-ml-pipelines")
 
 # COMMAND ----------
 
 # define all helper functions
 
-#
+# essential scripts for standalone scripting
+# get age based on date
+def calculate_age(df):
+    today = df['todays_date'].where(df['date_left'].isna(), df['date_left'])
+    birth_date = df['birth_date']
+
+    df['age'] = ((today - birth_date).dt.days / 365.25).fillna(0).astype(int)
+    df.loc[birth_date.isna(), 'age'] = 0
+
+    return df
+
+# get tenure/length of service
+def calculate_tenure(df):
+    today = df['todays_date'].where(df['date_left'].isna(), df['date_left'])
+    date_joined = df['date_joined']
+
+    df['tenure'] = (today - date_joined).dt.days / 365.25
+    df['tenure'] = df['tenure'].round(2)
+    df.loc[date_joined.isna(), 'tenure'] = pd.NA
+
+    return df
+
 
 def set_dtypes(df):
     df["date_joined"] = pd.to_datetime(df["date_joined"], dayfirst=True, errors="coerce")
@@ -55,11 +75,19 @@ def set_dtypes(df):
     df['pay_scale_group'] = df['pay_scale_group'].astype('category',errors='ignore')
     df['zip_code'] = df['zip_code'].astype('str',errors='ignore')
     df['work_schedule'] = df['work_schedule'].astype('category',errors='ignore')
-    #df["position_start_date"] = pd.to_datetime(df["position_start_date"], dayfirst=True, errors="coerce")
+
     try:
         df["date_left"] = pd.to_datetime(df["date_left"], dayfirst=True, errors="coerce") # only applicable for leavers
     except:
         pass
+
+    return df
+
+def set_dtypes_2(df):
+    df["position_entry_date"] = pd.to_datetime(df["position_entry_date"], dayfirst=True, errors="coerce")
+    df["confirmation_date"] = pd.to_datetime(df["confirmation_date"], dayfirst=True, errors="coerce")
+    df["probation_end_date"] = pd.to_datetime(df["probation_end_date"], dayfirst=True, errors="coerce")
+    df["probation_extension_end_date"] = pd.to_datetime(df["probation_extension_end_date"], dayfirst=True, errors="coerce")
 
     return df
 
@@ -92,23 +120,6 @@ def check_pers_subarea(row):
     
     return
 
-# this is the dictionary to map months to numbers
-month_no_dict = {
-    "apr": 4,
-    "may": 5,
-    "jun": 6,
-    "jul": 7,
-    "aug": 8,
-    "sep": 9,
-    "oct": 10,
-    "nov": 11,
-    "dec": 12,
-    "jan": 1,
-    "feb": 2,
-    "mar": 3,
-}
-
-
 def cat_fyear(row, mthcol, yearcol):
     try:
         if row[mthcol] < 4:
@@ -131,13 +142,6 @@ def cat_cyear(row):
         cyear = "20" + row["_fyear"][0:2]
     return cyear
 
-
-def str_todate(row):
-    date_time_str = "18/09/19 01:55:19"
-    date_time_obj = datetime.strptime(date_time_str, "%d/%m/%y %H:%M:%S")
-
-    return date_time_obj
-
 def check_dateleft(row, col):
     if pd.isna(row[col]):
         month_ = row['_mth_no']
@@ -159,11 +163,6 @@ def convert_toInt_toStr(row, col):
     except:
         return str(row[col])
 
-def calculate_age(df, birth_date_col):
-    today = pd.Timestamp(date.today())
-    age = (today - df[birth_date_col]).astype('timedelta64[D]') / 365.25
-    age[df[birth_date_col].isna()] = 0
-    return round(age, 2)
 
 
 # COMMAND ----------
@@ -177,7 +176,7 @@ def calculate_age(df, birth_date_col):
     latest_file = max(files, key=os.path.getctime)
     
     try:
-        print(f"{files}")
+        print(f"{latest_file}")
         df = pd.read_csv(latest_file, header=1)
     except:
         #print(f"Reading {latest_file} failed.")
@@ -191,6 +190,7 @@ def calculate_age(df, birth_date_col):
     
     df = group_cleaning(df)
     df = set_dtypes(df)
+    df = set_dtypes_2(df)
     
     df['_datejoined_month'] = df['date_joined'].dt.month.astype('Int64', errors='ignore')
     df['_datejoined_year'] = df['date_joined'].dt.year.astype('str', errors='ignore')
@@ -207,9 +207,9 @@ def calculate_age(df, birth_date_col):
 
 # COMMAND ----------
 
-def readHeadcountCSV():
+def readData():
     dflist = []
-    filenames = "*headcount*.csv"
+    filenames = "*.csv" # get the latest data
     for file in glob.glob(f"{root_dir}/{filenames}"):
         fileCreationDate = time.ctime(os.path.getctime(file))
         print(f"{file}, {fileCreationDate}")
@@ -224,171 +224,114 @@ def readHeadcountCSV():
         # remove duplicates if they are the same person with same department (within the same file only)
         datafile = datafile.drop_duplicates(subset=['persno', 'personnel_number','orgunit'], keep='first', inplace=True)
         
-    
     df = pd.concat(dflist, ignore_index=True)
     
     df = group_cleaning(df)
     df = set_dtypes(df)
+    # df = set_dtypes_2(df)
 
-    df["position_entry_date"] = pd.to_datetime(df["position_entry_date"], dayfirst=True, errors="coerce")
+    # Identify 'date_joined' corresponding to the latest 'todays_date' for each 'persno'
+    latest_date_join = df.sort_values('todays_date').groupby('persno').last()['date_joined']
+    # Map these latest 'date_joined' values back to the original dataframe
+    df['date_joined'] = df['persno'].map(latest_date_join)
     
     df['_datejoined_month'] = df['date_joined'].dt.month.astype('Int64', errors='ignore')
     df['_datejoined_year'] = df['date_joined'].dt.year.astype('str', errors='ignore')
     df['_datejoined_fy'] = df.apply(lambda row: cat_fyear(row,'_datejoined_month','_datejoined_year'), axis=1)
-    df['active'] = True
-    
+
+    df['_dateleft_month'] = df['date_left'].dt.month.astype('Int64', errors='ignore')
+    df['_dateleft_year'] = df['date_left'].dt.year.astype('str', errors='ignore')
+    df['_dateleft_fy'] = df.apply(lambda row: cat_fyear(row,'_dateleft_month','_dateleft_year'), axis=1)
+
     return df
-
-# COMMAND ----------
-
-def readFlexiTempCSV():
-    dflist = []
-    filenames = "*flexi*.csv"
-    for file in glob.glob(f"{root_dir}/{filenames}"):
-        fileCreationDate = time.ctime(os.path.getctime(file))
-        print(f"{file}, {fileCreationDate}")
-
-        try:
-            datafile = pd.read_csv(file, header=1, low_memory=False)
-        except:
-            print(f"Reading {file} failed.")
-            pass
-        datafile = cf.strip_clean_drop(datafile)
-        dflist.append(datafile)
-        # remove duplicates if they are the same person with same department (within the same file only)
-        datafile = datafile.drop_duplicates(subset=['persno', 'personnel_number','orgunit'], keep='first', inplace=True)
-        
-    
-    df = pd.concat(dflist, ignore_index=True)
-    
-    df = group_cleaning(df)
-    df = set_dtypes(df)
-
-    df["position_entry_date"] = pd.to_datetime(df["position_entry_date"], dayfirst=True, errors="coerce")
-    
-    df['_datejoined_month'] = df['date_joined'].dt.month.astype('Int64', errors='ignore')
-    df['_datejoined_year'] = df['date_joined'].dt.year.astype('str', errors='ignore')
-    df['_datejoined_fy'] = df.apply(lambda row: cat_fyear(row,'_datejoined_month','_datejoined_year'), axis=1)
-    df['active'] = True
-    
-    return df
-
-
-# COMMAND ----------
-
-def readPromotionCSV():
-    dflist = []
-    filenames = "*promotion*.csv"
-    
-    files = glob.glob(f"{root_dir}/{filenames}")
-    latest_file = max(files, key=os.path.getctime)
-    
-    try:
-        print(f"{latest_file}")
-        df = pd.read_csv(latest_file, header=1)
-    except:
-        print(f"Reading {latest_file} failed.")
-        pass
-    df = cf.strip_clean_drop(df)
-    df["start_date"] = pd.to_datetime(df["start_date"], dayfirst=True, errors="coerce")
-    df["todays_date"] = pd.to_datetime(df["todays_date"], dayfirst=True, errors="coerce")
-    df['persno'] = df.apply(lambda row: convert_toInt_toStr(row, 'persno'), axis=1)
-    df = df.drop_duplicates(subset=['persno', 'personnel_number','start_date'], keep='first')
-    '''
-    for file in glob.glob(f"{root_dir}/{filenames}"):
-        fileCreationDate = time.ctime(os.path.getctime(file))
-        print(f"{file}, {fileCreationDate}")
-
-        try:
-            datafile = pd.read_csv(file, header=1) 
-        except:
-            print(f"Reading {file} failed.")
-            pass
-        strip_clean_drop(datafile)
-        dflist.append(datafile)
-
-    df = pd.concat(dflist, ignore_index=True)
-    df["effective start date"] = pd.to_datetime(df["effective start date"], dayfirst=True, errors="coerce")
-    df["today's date"] = pd.to_datetime(df["today's date"], dayfirst=True, errors="coerce")
-    df['persno'] = df.apply(lambda row: convert_toInt_toStr(row, 'persno'), axis=1)
-    '''
-    
-    return df
-
-# COMMAND ----------
-
-df_onemap = pd.read_sql(
-    '''
-    SELECT * 
-    FROM ref_onemapsg
-    '''
-    ,engine
-)
-df_onemap.info()
 
 # COMMAND ----------
 
 if root_dir != "":
-    leavers_df = readLeaversCSV()
-    headcount_df = readHeadcountCSV()
-    df_etl_sf = pd.concat([headcount_df, leavers_df], ignore_index=True)
-    df_etl_sf['personnel_subarea'] = df_etl_sf.apply(lambda row: check_pers_subarea(row),axis=1)
-    df_etl_sf['source'] = "SF Direct"
-    df_etl_sf['eom'] = pd.to_datetime(df_etl_sf['todays_date']) + pd.offsets.MonthEnd(0)
-    df_etl_sf = pd.merge(df_etl_sf, df_onemap, on='zip_code', how='left')
-
-    flexitemp_df = readFlexiTempCSV()
-    flexitemp_df['personnel_subarea'] = flexitemp_df.apply(lambda row: check_pers_subarea(row),axis=1)
-    flexitemp_df['source'] = "SF Direct"
-    flexitemp_df['eom'] = pd.to_datetime(flexitemp_df['todays_date']) + pd.offsets.MonthEnd(0)
-    flexitemp_df = pd.merge(flexitemp_df, df_onemap, on='zip_code', how='left')
-
-    promotions_df = readPromotionCSV()
+    dataset = readData()
+    dataset['personnel_subarea'] = dataset.apply(lambda row: check_pers_subarea(row),axis=1)
+    dataset['source'] = "SF Direct"
     
 else:
     raise Exception("Root Dir is empty, mounting of Blob was unsuccessful.")
 
 # COMMAND ----------
 
-df_etl_sf.query(" date_left.notnull() ").groupby('todays_date').count()
-#df_etl_sf.groupby('todays_date').count()
+# global transformations
+dataset = calculate_age(dataset)
+dataset = calculate_tenure(dataset)
 
 # COMMAND ----------
 
-df_etl_sf.info()
+# get latest ref mapping tables
+
+ref_grade = pd.read_sql('SELECT * FROM tbl_reftable_grade', engine)
+ref_bu = pd.read_sql('SELECT * FROM tbl_reftable_bu', engine)
+ref_company = pd.read_sql('SELECT * FROM tbl_reftable_company', engine)
+ref_attrition = pd.read_sql('SELECT * FROM tbl_reftable_attrition', engine)
+ref_jobgroup = pd.read_sql('SELECT * FROM tbl_reftable_jobgroup', engine)
+
+ref_grade.info()
+ref_bu.info()
+ref_company.info()
+ref_attrition.info()
+ref_jobgroup.info()
 
 # COMMAND ----------
 
-df_etl_sf.groupby(['eom','active']).persno.nunique()
+dataset['personnel_subarea'] = dataset['personnel_subarea'].str.strip().str.upper()
+dataset['company_code'] = dataset['company_code'].str.strip().str.upper()
+dataset['orgunit'] = dataset['orgunit'].str.strip().str.upper()
+#dataset['reason_for_action'] = dataset['reason_for_action'].str.strip().str.upper()
+dataset['job'] = dataset['job'].str.strip().str.upper()
 
 # COMMAND ----------
 
-df_etl_sf.eom.value_counts()
+# complete vlookup by merging
+dataset = pd.merge(dataset, ref_grade, on="personnel_subarea",how='left')
+dataset = pd.merge(dataset, ref_bu, on='orgunit',how='left', suffixes=(None, '_ref'))
+dataset = pd.merge(dataset, ref_company, on='company_code',how='left')
+#dataset = pd.merge(dataset, ref_attrition, left_on='reason_for_action', right_on='attrition_reason',how='left')
+dataset = pd.merge(dataset, ref_jobgroup, on='job',how='left')
 
 # COMMAND ----------
 
-df_etl_sf.todays_date.value_counts().sort_index()
+# fill NAs
+dataset['gender_key'] = dataset['gender_key'].fillna('M')
 
 # COMMAND ----------
 
-db.insert_with_progress(df_etl_sf,"tbl_sf_sql_daily",engine)
+dataset['active'] = dataset['date_left'].apply(lambda x: False if pd.isnull(x) else True)
 
 # COMMAND ----------
 
-db.insert_with_progress(promotions_df,"tbl_sf_sql_daily_promotions",engine)
+dataset.info()
 
 # COMMAND ----------
 
-db.insert_with_progress(flexitemp_df,"tbl_sf_sql_daily_flexi_temp",engine)
+dataset.to_parquet('/tmp/dataset.parquet')
 
 # COMMAND ----------
 
-flexitemp_df.info()
+dbutils.fs.cp('file:/tmp/dataset.parquet', 'dbfs:/user/hive/warehouse/dataset.parquet')
 
 # COMMAND ----------
 
-df_etl_sf.info()
+# Read the Parquet file into a DataFrame
+df = spark.read.parquet("dbfs:/user/hive/warehouse/dataset.parquet")
+
+# Write the DataFrame out as a Hive table
+df.write.mode("overwrite").saveAsTable("dataset")
 
 # COMMAND ----------
 
+df.select("active").distinct().count()
 
+# COMMAND ----------
+
+db.insert_with_progress(dataset,"ml_pipeline_train",engine)
+
+# COMMAND ----------
+
+from pycaret.classification import *
+s = setup(dataset, target='active')

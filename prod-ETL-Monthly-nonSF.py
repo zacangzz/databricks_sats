@@ -10,10 +10,9 @@ import re
 import time
 import warnings
 
-# commonfunc
-import pkg_commonfunctions as cf
-# connect to db
-import pkg_dbconnect as db
+# import my packages
+from pkg_all import cf
+from pkg_all import db
 
 # COMMAND ----------
 
@@ -98,12 +97,6 @@ def cat_cyear(row):
     return cyear
 
 
-def str_todate(row):
-    date_time_str = "18/09/19 01:55:19"
-    date_time_obj = datetime.strptime(date_time_str, "%d/%m/%y %H:%M:%S")
-
-    return date_time_obj
-
 def check_dateleft(row, col):
     if pd.isna(row[col]):
         month_ = row['_mth_no']
@@ -113,6 +106,23 @@ def check_dateleft(row, col):
         return date_
     else:
         return row[col]
+
+def check_dateleft(df, col):
+    # Create a mask for missing values
+    missing_dates = pd.isna(df[col])
+
+    # Create new dates where dates are missing
+    new_dates = pd.to_datetime(df.loc[missing_dates, '_mth_no'].astype(str) + '/' +
+                               df.loc[missing_dates, '_cyear'].astype(str),
+                               format='%m/%Y')
+
+    # Set the day to the first of the month
+    new_dates = new_dates.map(lambda x: x.replace(day=1))
+
+    # Combine the original and new dates
+    df[col] = df[col].fillna(new_dates)
+
+    return df
 
 # converts everything to float first, then convert back to int, to get rid of any decimals
 def convert_toInt_toStr(row, col):
@@ -146,7 +156,7 @@ def readLeaversExcel():
         print(f"{filename}, {fileCreationDate}")
         
         excel = pd.ExcelFile(filename)
-        regex_string = 'Departure\Z'
+        regex_string = r'Departure\Z'
         regex = re.compile(regex_string,re.I)
         sheets = [n for n in excel.sheet_names if regex.match(n)] # finds sheets based on string regex
         
@@ -181,21 +191,14 @@ def readLeaversExcel():
     df['date_left'] = pd.to_datetime(df['date_left'],dayfirst=True,errors='coerce')
     
     # ensure that date left is not null, if null use file's date
-    df['date_left'] = df.apply(lambda row: check_dateleft(row, 'date_left'), axis=1)
+    # df['date_left'] = df.apply(lambda row: check_dateleft(row, 'date_left'), axis=1)
+    df = check_dateleft(df, 'date_left')
     
     df = df.dropna(subset=['persno'])
     df = df.drop(df.filter(regex='unnamed').columns, axis=1)
     df = df.drop_duplicates(subset=['persno', 'personnel_number','date_left'], keep='first')
 
     df['_fyear'] = df.apply(lambda row: cat_fyear(row,'_mth_no','_cyear'), axis=1)
-    
-    df['_dateleft_month'] = df['date_left'].dt.month.astype('Int64', errors='ignore')
-    df['_dateleft_year'] = df['date_left'].dt.year.astype('str', errors='ignore')
-    df['_datejoined_month'] = df['date_joined'].dt.month.astype('Int64', errors='ignore')
-    df['_datejoined_year'] = df['date_joined'].dt.year.astype('str', errors='ignore')
-    
-    df['_dateleft_fy'] = df.apply(lambda row: cat_fyear(row,'_dateleft_month','_dateleft_year'), axis=1)
-    df['_datejoined_fy'] = df.apply(lambda row: cat_fyear(row,'_datejoined_month','_datejoined_year'), axis=1)
     
     df['orgunit'] = df['orgunit'].fillna("")
     df['personnel_subarea'] = df['personnel_subarea'].fillna("N/A")
@@ -223,7 +226,7 @@ def readHeadcountExcel():
         print(f"{filename}, {fileCreationDate}")
 
         excel = pd.ExcelFile(filename)
-        regex_string = '\AName'
+        regex_string = r'\AName'
         regex = re.compile(regex_string,re.I)
         sheets = [n for n in excel.sheet_names if regex.match(n)] # finds sheets based on string regex
         
@@ -262,10 +265,6 @@ def readHeadcountExcel():
     df = df.dropna(how='all')
     df = df.drop(df.filter(regex='unnamed').columns, axis=1)
     
-    df['_datejoined_month'] = df['date_joined'].dt.month.astype('Int64', errors='ignore')
-    df['_datejoined_year'] = df['date_joined'].dt.year.astype('str', errors='ignore')
-    df['_datejoined_fy'] = df.apply(lambda row: cat_fyear(row,'_datejoined_month','_datejoined_year'), axis=1)
-    
     df['orgunit'] = df['orgunit'].fillna("")
     df['personnel_subarea'] = df['personnel_subarea'].fillna("N/A")
     df['persno'] = df['persno'].fillna(df['personnel_number'])
@@ -292,7 +291,7 @@ def readPromotionExcel():
         print(f"{filename}, {fileCreationDate}")
         
         excel = pd.ExcelFile(filename)
-        regex_string = '\AProm'
+        regex_string = r'\AProm'
         regex = re.compile(regex_string,re.I)
         sheets = [n for n in excel.sheet_names if regex.match(n)] # finds sheets based on string regex
         
@@ -352,6 +351,26 @@ combined_df.info()
 
 # COMMAND ----------
 
+# make sure date join is all the same
+# Identify 'date_join' corresponding to the latest 'eom' for each 'persno'
+latest_date_join = combined_df.sort_values('eom').groupby('persno').last()['date_joined']
+# Map these latest 'date_joined' values back to the original dataframe
+combined_df['date_joined'] = combined_df['persno'].map(latest_date_join)
+# feature creation based on date join & date left
+combined_df['_dateleft_month'] = combined_df['date_left'].dt.month.astype('Int64', errors='ignore')
+combined_df['_dateleft_year'] = combined_df['date_left'].dt.year.astype('str', errors='ignore')
+combined_df['_dateleft_fy'] = combined_df.apply(lambda row: cat_fyear(row,'_dateleft_month','_dateleft_year'), axis=1)
+
+combined_df['_datejoined_month'] = combined_df['date_joined'].dt.month.astype('Int64', errors='ignore')
+combined_df['_datejoined_year'] = combined_df['date_joined'].dt.year.astype('str', errors='ignore')
+combined_df['_datejoined_fy'] = combined_df.apply(lambda row: cat_fyear(row,'_datejoined_month','_datejoined_year'), axis=1)
+
+# COMMAND ----------
+
+combined_df.groupby(['active']).persno.nunique()
+
+# COMMAND ----------
+
 combined_df.eom.value_counts()
 
 # COMMAND ----------
@@ -361,3 +380,7 @@ db.insert_with_progress(combined_df,"tbl_nonsf_sql_monthly",engine)
 # COMMAND ----------
 
 db.insert_with_progress(promotions_df,"tbl_nonsf_sql_monthly_promotions",engine)
+
+# COMMAND ----------
+
+

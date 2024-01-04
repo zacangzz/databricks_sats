@@ -8,10 +8,9 @@ import numpy as np
 import re
 import warnings
 
-# commonfunc
-import pkg_commonfunctions as cf
-# connect to db
-import pkg_dbconnect as db
+# import my packages
+from pkg_all import cf
+from pkg_all import db
 
 # COMMAND ----------
 
@@ -27,12 +26,6 @@ root_dir = db.connect_AzureBlob("hc-reftable")
 
 # define all helper functions
 
-def str_todate(row):
-    date_time_str = "18/09/19 01:55:19"
-    date_time_obj = datetime.strptime(date_time_str, "%d/%m/%y %H:%M:%S")
-
-    return date_time_obj
-
 # converts everything to float first, then convert back to int, to get rid of any decimals
 def convert_toInt_toStr(row, col):
     # print(f'Starting value is {row[col]}, with Type: {type(row[col])}')
@@ -46,7 +39,7 @@ def convert_toInt_toStr(row, col):
 # COMMAND ----------
 
 def loadSFOrgStructure():
-    filename = f"{root_dir}/sf-orgstructure-Component1.csv"
+    filename = f"{root_dir}/sf_orgstructure-Component1.csv"
 
     try:
         df_sforg = pd.read_csv(filename, header=1,dtype={'Org.Unit':str})
@@ -55,9 +48,17 @@ def loadSFOrgStructure():
         pass
 
     df_sforg = cf.strip_clean_drop(df_sforg)
-    df_sforg = df_sforg[['business_unit_label','orgunit','orgunit_name','parentdepartment_label']].copy()
-    df_sforg.columns = {'business_unit','orgunit','organizational_unit','parent_department'}
-
+    df_sforg = df_sforg[['bu','orgunit','orgunit_name', 'costcenter_externalcode','costcenter_label','parent_department','effectivestatus']].copy()
+    # rename columns appropriately
+    bu_col_names = {
+        'bu': 'business_unit',
+        'orgunit_name': 'organizational_unit', 
+        'costcenter_externalcode': 'costcenter',
+        'costcenter_label': 'costcenter_name',
+        'parentdepartment_label': 'parent_department'
+    }
+    df_sforg = df_sforg.rename(columns=bu_col_names)
+    # fill blank parent dept
     df_sforg['parent_department'] = df_sforg['parent_department'].fillna(value=df_sforg['business_unit'])
     df_sforg = df_sforg.apply(lambda x: x.str.upper() if x.dtypes=="string" else x)
     return df_sforg
@@ -71,7 +72,7 @@ sforg_df.info()
 
 # COMMAND ----------
 
-sforg_df.sample(10)
+sforg_df.sample(2)
 
 # COMMAND ----------
 
@@ -102,12 +103,19 @@ def loadreferencetables():
     # for consistency
     df_bu = df_bu.apply(lambda x: x.str.upper() if x.dtypes=="string" else x)
     df_grade = df_grade.apply(lambda x: x.str.upper() if x.dtypes=="string" else x)
+    df_company = df_company.apply(lambda x: x.str.upper() if x.dtypes=="string" else x)
 
     # fix strings & integers
     df_company = df_company.rename(columns={"company_id": "company_code"})
+    #df_grade
 
     # ensure no blanks
     df_bu['parent_department'] = df_bu['parent_department'].fillna(value=df_bu['business_unit'])
+    # add space for cost center/effective status
+    df_bu['costcenter'] = pd.NA
+    df_bu['costcenter_name'] = pd.NA
+    df_bu['effectivestatus'] = pd.NA
+    df_grade['estab_grade_sort'] = df_grade['estab_grade_sort'].fillna(0)
 
     # clean up for vlookup
     df_grade['personnel_subarea'] = df_grade['personnel_subarea'].str.upper()
@@ -135,12 +143,10 @@ else:
 # COMMAND ----------
 
 sforg_df = sforg_df.set_index('orgunit')
-sforg_df
 
 # COMMAND ----------
 
 ref_bu = ref_bu.set_index('orgunit')
-ref_bu
 
 # COMMAND ----------
 
@@ -151,7 +157,19 @@ ref_bu = ref_bu.reset_index()
 
 # COMMAND ----------
 
-ref_bu
+ref_bu.query('business_unit.isnull()')
+
+# COMMAND ----------
+
+ref_bu.isna().any()
+
+# COMMAND ----------
+
+ref_grade.info()
+
+# COMMAND ----------
+
+ref_company.company_code.value_counts()
 
 # COMMAND ----------
 
