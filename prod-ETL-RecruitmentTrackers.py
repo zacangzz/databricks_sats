@@ -73,18 +73,10 @@ def readTrackerExcel():
         valid_cols = [col for col in select_mask if col in datafile.columns]
         # Select only the valid columns
         datafile = datafile.loc[:, valid_cols]
-
-        '''strings_to_drop = ['dose', 'booster', 'covid_19', 'vaccination', 'unnamed']
-        drop_cols = [col for col in datafile.columns if any(substring in col for substring in strings_to_drop)]
-        datafile = datafile.drop(drop_cols, axis=1)'''
-        '''# remove excess text from column names
-        strings_to_remove = ['_dd_mmm_yyyy', '_eg_19_may_2022', '_yyyy_mm_dd']
-        datafile.rename(columns = lambda x: x.replace(strings_to_remove[0], '').replace(strings_to_remove[1], '').replace(strings_to_remove[2], ''), inplace=True)'''
         
         # drop nulls
         datafile = datafile.dropna(subset=['candidate_name'])
-        datafile = cf.strip_clean_drop(datafile) # clean again
-        print(datafile.columns.tolist())
+        print(datafile.shape)
         dflist.append(datafile)
     
     # bring all the dfs together & process them all
@@ -96,12 +88,43 @@ def readTrackerExcel():
     # fix date-time format, clean strings
     date_columns = ['join_date','date_of_application_received','date_of_interview','date_of_interview_outcome_communication','date_of_candidates_acceptance_rejection']
     for col in date_columns:
-        df[col] = df[col].astype(str).str.strip()
-        df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
+        if col in df.columns:
+            #df[col] = df[col].astype(str).str.strip()
+            df[col] = pd.to_datetime(df[col], dayfirst=True, errors='coerce')
+        else:
+            df[col] = df[col].astype(str).str.strip().str.upper()
 
+    df = df.replace(np.nan, '', regex=True)
     return df
 
 rectracker_df = readTrackerExcel()
+
+# COMMAND ----------
+
+test = pd.read_excel("/dbfs/mnt/hc-rec-tracker/Recruitment Status Template_NTS_V Resource.xlsx",sheet_name = "Candidate info",header=0)
+test = cf.strip_clean_drop(test)
+select_mask = ['candidate_name', 'date_of_application_received', 'source', 'nationality', 'employment_type','position', 'bu', 'parent_department', 'job_grade', 'final_status', 'shortlisted_for_interview', 'reason_why_application_is_not_shortlisted_for_interview', 'date_of_interview', 'final_interview_outcome', 'date_of_interview_outcome_communication', 'reason_for_rejecting_candidate', 'offer_outcome', 'date_of_candidates_acceptance_rejection', 'reason_why_offer_is_rejected_by_candidate', 'join_date', 'staff_no', 'work_permit_status', 'wp_card', 'airport_pass', 'medical_report', 'staff_referral_fee','joining_bonus', 'filename', 'tracker_source']
+# drop useless columns
+valid_cols = [col for col in select_mask if col in test.columns]
+# Select only the valid columns
+test = test.loc[:, valid_cols]
+test = test.dropna(subset=['candidate_name'])
+test = test.applymap(cf.encode_strings)
+print(test.columns)
+date_columns = ['join_date','date_of_application_received','date_of_interview','date_of_interview_outcome_communication','date_of_candidates_acceptance_rejection']
+for col in date_columns:
+    if col in test.columns:
+        print(col)
+        #test[col] = test[col].astype(str).str.strip()
+        test[col] = pd.to_datetime(test[col], dayfirst=True, errors='coerce')
+    else:
+        pass
+test = test.replace(np.nan, '', regex=True)
+test.info()
+
+# COMMAND ----------
+
+rectracker_df.query('filename=="Recruitment Status Template_NTS_V Resource.xlsx"').info()
 
 # COMMAND ----------
 
@@ -154,67 +177,72 @@ singapore_time
 
 # COMMAND ----------
 
-rectracker_df.to_csv('tmp_rec_tracker.csv', index=False)
+#rectracker_df.to_csv('tmp_rec_tracker.csv', index=False, mode='w')
 
 # COMMAND ----------
 
-dataframe = pd.read_csv('tmp_rec_tracker.csv',na_filter=True)
-dataframe = dataframe.replace(np.nan, '', regex=True)
+'''dataframe = pd.read_csv('tmp_rec_tracker.csv',na_filter=True)
 # fix date-time format, clean strings
 date_columns = ['join_date','date_of_application_received','date_of_interview','date_of_interview_outcome_communication','date_of_candidates_acceptance_rejection','last_update']
 for col in dataframe.columns:
     if col in date_columns:
-        dataframe[col] = dataframe[col].astype(str).str.strip()
+        #dataframe[col] = dataframe[col].astype(str).str.strip()
         dataframe[col] = pd.to_datetime(dataframe[col], dayfirst=True, errors='coerce')
     else:
         dataframe[col] = dataframe[col].astype(str).str.strip().str.upper()
-dataframe.info()
-
-# COMMAND ----------
-
-dataframe.sample(2)
+dataframe.info()'''
 
 # COMMAND ----------
 
 # initialize error column
-dataframe['error'] = ""
+rectracker_df['error'] = ""
 
 # Cat A
 cols_A = ['candidate_name', 'date_of_application_received', 'nationality', 'bu', 
           'job_grade', 'parent_department', 'position', 'source', 
           'shortlisted_for_interview', 'employment_type']
-dataframe.loc[dataframe[cols_A].isnull().any(axis=1), 'error'] += 'Cat A error; '
+rectracker_df.loc[rectracker_df[cols_A].isnull().any(axis=1), 'error'] += 'Cat A error; '
 
 # Cat B
 cols_B = ['date_of_interview', 'final_interview_outcome']
-dataframe.loc[(dataframe['shortlisted_for_interview'] == "YES") & dataframe[cols_B].isnull().any(axis=1), 'error'] += 'Cat B error; '
+rectracker_df.loc[(rectracker_df['shortlisted_for_interview'] == "YES") & rectracker_df[cols_B].isnull().any(axis=1), 'error'] += 'Cat B error; '
 
 # Cat C
 cols_C = ['reason_why_application_is_not_shortlisted_for_interview']
-dataframe.loc[(dataframe['shortlisted_for_interview'] == "NO") & dataframe[cols_C].isnull().any(axis=1), 'error'] += 'Cat C error; '
+rectracker_df.loc[(rectracker_df['shortlisted_for_interview'] == "NO") & rectracker_df[cols_C].isnull().any(axis=1), 'error'] += 'Cat C error; '
 
 # Cat D
 cols_D = ['date_of_interview_outcome_communication', 'offer_outcome']
-dataframe.loc[(dataframe['final_interview_outcome'] == "SELECTED") & dataframe[cols_D].isnull().any(axis=1), 'error'] += 'Cat D error; '
+rectracker_df.loc[(rectracker_df['final_interview_outcome'] == "SELECTED") & rectracker_df[cols_D].isnull().any(axis=1), 'error'] += 'Cat D error; '
 
 # Cat E
 cols_E = ['reason_for_rejecting_candidate']
-dataframe.loc[(dataframe['final_interview_outcome'] == "REJECTED") & dataframe[cols_E].isnull().any(axis=1), 'error'] += 'Cat E error; '
+rectracker_df.loc[(rectracker_df['final_interview_outcome'] == "REJECTED") & rectracker_df[cols_E].isnull().any(axis=1), 'error'] += 'Cat E error; '
 
 # Cat F
-cols_F = ['date_of_candidates_acceptance_rejection', 'join_date', 'final_status']
-dataframe.loc[(dataframe['offer_outcome'] == "ACCEPTED") & dataframe[cols_F].isnull().any(axis=1), 'error'] += 'Cat F error; '
+cols_F = ['date_of_candidates_acceptance_rejection', 'final_status']
+rectracker_df.loc[(rectracker_df['offer_outcome'] == "ACCEPTED") & rectracker_df[cols_F].isnull().any(axis=1), 'error'] += 'Cat F error; '
 
 # Cat G
 cols_G = ['date_of_candidates_acceptance_rejection', 'reason_why_offer_is_rejected_by_candidate']
-dataframe.loc[(dataframe['offer_outcome'] == "REJECTED") & dataframe[cols_G].isnull().any(axis=1), 'error'] += 'Cat G error; '
+rectracker_df.loc[(rectracker_df['offer_outcome'] == "REJECTED") & rectracker_df[cols_G].isnull().any(axis=1), 'error'] += 'Cat G error; '
+
+# Cat H
+cols_H = ['join_date']
+rectracker_df.loc[
+    ((rectracker_df['final_status'] == "JOINED") |
+    (rectracker_df['final_status'] == "ACCEPTED OFFER AND PENDING TO JOIN") |
+    (rectracker_df['final_status'] == "ACCEPTED OFFER AND PENDING FOR IPA/ENTRY APPROVAL") |
+    (rectracker_df['final_status'] == "NO SHOW ON FIRST DAY"))
+    & rectracker_df[cols_H].isnull().any(axis=1), 'error'
+    ] += 'Cat H error; '
 
 # replace empty error strings with np.nan
-dataframe['error'] = dataframe['error'].replace('', np.nan)
+rectracker_df['error'] = rectracker_df['error'].replace('', np.nan)
 
 # COMMAND ----------
 
-dataframe.info()
+rectracker_df.info()
 
 # COMMAND ----------
 
@@ -234,28 +262,88 @@ If [final_interview_outcome] == "SELECTED", [date_of_interview_outcome_communica
 <li><b>Cat E:</b>
 If [final_interview_outcome] == "REJECTED", [reason_for_rejecting_candidate] cannot be blank</li>
 <li><b>Cat F:</b>
-If [offer_outcome] == "ACCEPTED", [date_of_candidates_acceptance_rejection],[join_date],[final_status] cannot be blank</li>
+If [offer_outcome] == "ACCEPTED", [date_of_candidates_acceptance_rejection],[final_status] cannot be blank</li>
 <li><b>Cat G:</b>
 If [offer_outcome] == "REJECTED", [date_of_candidates_acceptance_rejection],[reason_why_offer_is_rejected_by_candidate] cannot be blank</li>
+<li><b>Cat H:</b>
+If [final_status] == "JOINED" or "ACCEPTED OFFER AND PENDING TO JOIN" or "ACCEPTED OFFER AND PENDING FOR IPA/ENTRY APPROVAL" or "NO SHOW ON FIRST DAY", [join_date] cannot be blank</li>
 </ul>
 
 """
-email_body = dataframe.groupby(['tracker_source','filename','error']).candidate_name.count().reset_index().to_html()
+email_body = rectracker_df.groupby(['tracker_source','filename','error']).candidate_name.count().reset_index().to_html()
 email_body = email_additional_text_pre + email_body
 with open('data/email_body.html', 'w') as f:
     f.write(email_body)
 
 # COMMAND ----------
 
-dataframe[['filename','candidate_name','error']].query('error.notnull()').to_excel('data/errorlist.xlsx',index=False)
+rectracker_df[['filename','candidate_name','error']].query('error.notnull()').to_excel('data/errorlist.xlsx',index=False)
 
 # COMMAND ----------
 
-db.insert_with_progress(dataframe,"tbl_rec_trackers",engine)
+def readTrackerExcel_interns():
+    file = f"{root_dir}/Internship Recruitment Tracker.xlsx"
+    try:
+        datafile = pd.read_excel(file,sheet_name = "Master Tracker",header=0)
+        datafile = cf.strip_clean_drop(datafile)
+        # add an extra column to record file name
+        datafile['filename']=os.path.basename(file)
+        datafile['tracker_source']="HCS"
+    except:
+        print(f"Reading {file} failed.")
+        pass
+
+    # select only the necessary columns:
+    select_mask = [
+        'candidate_name', 'date_of_application_received', 'source', 'nationality', 'employment_type','position', 'bu', 'parent_department', 'job_grade', 'final_status', 'shortlisted_for_interview', 'reason_why_application_is_not_shortlisted_for_interview', 'date_of_interview', 'final_interview_outcome', 'date_of_interview_outcome_communication', 'reason_for_rejecting_candidate', 'offer_outcome', 'date_of_candidates_acceptance_rejection', 'reason_why_offer_is_rejected_by_candidate', 'join_date', 'staff_no', 'work_permit_status', 'wp_card', 'airport_pass', 'medical_report', 'staff_referral_fee','joining_bonus', 'filename', 'tracker_source', \
+            'intake','school','course_of_study','start_date','end_date','recruitment_status' # only applicable for intern tracker
+    ]
+    # drop useless columns
+    valid_cols = [col for col in select_mask if col in datafile.columns]
+    # Select only the valid columns
+    datafile = datafile.loc[:, valid_cols]
+
+    # drop nulls
+    datafile = datafile.dropna(subset=['candidate_name'])
+    datafile = cf.strip_clean_drop(datafile) # clean again
+    print(datafile.columns.tolist())
+
+    # remove non-ascii characters
+    datafile = datafile.applymap(cf.encode_strings)
+
+    # add update time
+    datafile['last_update'] = singapore_time
+
+    # remove NAs
+    datafile = datafile.replace(np.nan, '', regex=True)
+
+    # fix date-time format, clean strings
+    date_columns = ['join_date','date_of_application_received','date_of_interview','date_of_interview_outcome_communication','date_of_candidates_acceptance_rejection']
+    for col in datafile.columns:
+        if col in date_columns:
+            #datafile[col] = datafile[col].astype(str).str.strip()
+            datafile[col] = pd.to_datetime(datafile[col], dayfirst=True, errors='coerce')
+        else:
+            datafile[col] = datafile[col].astype(str).str.strip().str.upper()
+
+    datafile['interns'] = True
+    datafile.info()
+
+    return datafile
+
+rectracker_interns_df = readTrackerExcel_interns()
 
 # COMMAND ----------
 
-os.remove("tmp_rec_tracker.csv")
+final_df = pd.concat([rectracker_df,rectracker_interns_df],ignore_index=True)
+
+# COMMAND ----------
+
+final_df.groupby(['source']).candidate_name.count()
+
+# COMMAND ----------
+
+db.insert_with_progress(final_df,"tbl_rec_trackers",engine)
 
 # COMMAND ----------
 

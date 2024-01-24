@@ -13,6 +13,10 @@ engine = db.connect_SQLServer()
 
 # COMMAND ----------
 
+!pip install --upgrade build
+
+# COMMAND ----------
+
 from pyspark.sql import SparkSession
 
 def read_sql_table(table, spark_session=None):
@@ -92,12 +96,12 @@ df1
 sql_query = \
 '''
 SELECT
-    eom,
+    todays_date,
     source,
     COUNT(DISTINCT persno) AS Headcount
 FROM tbl_hc_eelisting
-WHERE active = 'TRUE'
-GROUP BY eom, source
+WHERE active = 'FALSE'
+GROUP BY todays_date, source
 '''
 df2 = pd.read_sql(sql_query,engine)
 df2.info()
@@ -105,6 +109,21 @@ df2.info()
 # COMMAND ----------
 
 display(df2)
+
+# COMMAND ----------
+
+
+# quick checks
+sql_query = \
+'''
+SELECT t1.*, t2.business_unit, t2.parent_department, t2.job_grade, t2.date_joined, t2.date_left
+FROM tbl_benefits_rmg_sftp AS t1
+LEFT JOIN tbl_hc_eelisting AS t2
+ON t1.employeenumber = t2.persno;
+
+'''
+df2 = pd.read_sql(sql_query,engine)
+df2.info()
 
 # COMMAND ----------
 

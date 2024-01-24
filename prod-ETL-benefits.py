@@ -48,6 +48,38 @@ ref_df.fees.value_counts()
 
 # COMMAND ----------
 
+def readCreditNote():
+    dflist = []
+    filenames = "*UOB Credit Note*.xlsx"
+    for file in glob.glob(f"{root_dir}/{filenames}"):
+        fileCreationDate = time.ctime(os.path.getctime(file))
+        print(f"{file}, {fileCreationDate}")
+
+        try:
+            datafile = pd.read_excel(file, sheet_name=0, header=0)
+        except:
+            print(f"Reading {file} failed.")
+            pass
+        datafile = cf.strip_clean_drop(datafile)
+        datafile['filename'] = os.path.basename(file)
+        # set dtypes correctly
+        """datafile["departure_date"] = pd.to_datetime(datafile["departure_date"], dayfirst=True, errors="coerce").dt.date
+        datafile["return_date"] = pd.to_datetime(datafile["return_date"], dayfirst=True, errors="coerce").dt.date
+        datafile["invoice_date"] = pd.to_datetime(datafile["invoice_date"], dayfirst=True, errors="coerce").dt.date
+        datafile["booking_date"] = pd.to_datetime(datafile["booking_date"], dayfirst=True, errors="coerce").dt.date"""
+
+        dflist.append(datafile)
+    
+    df = pd.concat(dflist, ignore_index=True)
+
+    print(df.info())
+    return df
+
+uobcr_df = readCreditNote()
+uobcr_df
+
+# COMMAND ----------
+
 def readUOBTOP():
     dflist = []
     filenames = "*UOBTP*.xlsx"
@@ -117,6 +149,11 @@ db.insert_with_progress(uobtp_df_long,"tbl_uobtravel_detail",engine)
 # COMMAND ----------
 
 db.insert_with_progress(ref_df,"ref_uobtravel_fees",engine)
+
+# COMMAND ----------
+
+
+db.insert_with_progress(uobcr_df,"tbl_uob_creditnote",engine)
 
 # COMMAND ----------
 

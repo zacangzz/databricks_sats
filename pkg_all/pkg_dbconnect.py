@@ -75,10 +75,12 @@ def connect_SQLServer(server: str = ""):
 def chunker(seq, size):
     return (seq[pos : pos + size] for pos in range(0, len(seq), size))
 
-def insert_with_progress(df, db, engine):
+def insert_with_progress(df, db, engine, schema='dbo'):
     # using sessionmaker compatibility with sqlalchemy 2.x
     Session = sessionmaker(bind=engine, future=True)
-    chunksize = int(len(df) / 10)
+    # chunksize = int(len(df) / 10)
+    chunksize = max(1, int(len(df) / 10))  # Ensure chunksize is at least 1
+
 
     with tqdm(total=len(df)) as pbar:
         for i, cdf in enumerate(chunker(df, chunksize)):
@@ -88,7 +90,7 @@ def insert_with_progress(df, db, engine):
                 with session.begin():
                     cdf.to_sql(
                         db,
-                        schema="dbo",
+                        schema=schema,
                         con=session.bind,
                         if_exists=replace,
                         index=False,

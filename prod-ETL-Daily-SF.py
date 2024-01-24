@@ -9,9 +9,6 @@ import numpy as np
 import re
 import time
 import warnings
-# from zipfile import ZipFile
-import holidays
-from dateutil.relativedelta import relativedelta
 
 # import my packages
 from pkg_all import cf
@@ -347,6 +344,10 @@ df_etl_sf.info()
 # COMMAND ----------
 
 df_etl_sf.groupby(['eom','active']).persno.nunique()
+
+# COMMAND ----------
+
+df_etl_sf.groupby(['todays_date','active']).persno.nunique()
 
 # COMMAND ----------
 

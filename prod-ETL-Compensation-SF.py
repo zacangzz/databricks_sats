@@ -9,8 +9,6 @@ import numpy as np
 import re
 import time
 
-from dateutil.relativedelta import relativedelta
-
 # import my packages
 from pkg_all import cf
 from pkg_all import db
@@ -276,11 +274,11 @@ comp_df.query('persno=="88011914"')
 
 # COMMAND ----------
 
-db.insert_with_progress(comp_df,"tbl_sf_sql_comp",engine)
+db.insert_with_progress(comp_df,"tbl_sf_sql_comp",engine,schema='confi')
 
 # COMMAND ----------
 
-db.insert_with_progress(md_df_long,"tbl_mercerdata",engine)
+db.insert_with_progress(md_df_long,"tbl_mercerdata",engine,schema='confi')
 
 # COMMAND ----------
 
@@ -294,7 +292,7 @@ db.insert_with_progress(jobfammap_df,"tbl_jobfammap",engine)
 
 # COMMAND ----------
 
-db.insert_with_progress(salary_range,"tbl_salary_range",engine)
+db.insert_with_progress(salary_range,"tbl_salary_range",engine,schema='confi')
 
 
 # COMMAND ----------
